@@ -4,8 +4,8 @@ import json
 import logging
 import time
 from typing import Optional
+from urllib.parse import unquote
 
-import browser_cookie3
 from tqdm import tqdm
 
 from yuketang_video.api import Heartbeat, YuketangAPI, get_video_duration
@@ -21,8 +21,17 @@ async def main():
     with open("config.json") as f:
         config = json.load(f)
 
-    cookies = browser_cookie3.firefox(domain_name="pro.yuketang.cn")
-    cookie_dict = {cookie.name: cookie.value for cookie in cookies if cookie.value}
+    cookie_str = config["cookie"]
+
+    if cookie_str == "FIREFOX":
+        import browser_cookie3
+
+        cookies = browser_cookie3.firefox(domain_name="pro.yuketang.cn")
+        cookie_dict = {cookie.name: cookie.value for cookie in cookies if cookie.value}
+
+    else:
+        cookies = [kv.split("=", 1) for kv in cookie_str.split("; ")]
+        cookie_dict = {k: unquote(v) for k, v in cookies}
 
     api = YuketangAPI()
     api.session.headers.update({"User-Agent": config["user_agent"]})
@@ -111,13 +120,20 @@ async def collect_leaf_ids(api: YuketangAPI, classroom_id: int) -> list[int]:
                 logger.info("  Section: %d %s", item["id"], item["name"])
 
                 for leaf in item["leaf_list"]:
-                    logger.info("    Leaf: %d %s type=%d", leaf["id"], leaf["name"], leaf["leaf_type"])
+                    logger.info(
+                        "    Leaf: %d %s type=%d",
+                        leaf["id"],
+                        leaf["name"],
+                        leaf["leaf_type"],
+                    )
 
                     if leaf["leaf_type"] == 0:
                         leaf_ids.append(leaf["id"])
 
             else:
-                logger.info("  Leaf: %d %s type=%d", item["id"], item["name"], item["leaf_type"])
+                logger.info(
+                    "  Leaf: %d %s type=%d", item["id"], item["name"], item["leaf_type"]
+                )
                 if item["leaf_type"] == 0:
                     leaf_ids.append(item["id"])
 
