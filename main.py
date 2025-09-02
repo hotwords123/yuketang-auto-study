@@ -38,7 +38,8 @@ async def main():
             api.session.headers[header] = cookie_dict[cookie_name]
 
     classroom_id = config["classroom_id"]
-    leaf_ids = config["leaf_ids"]
+    leaf_ids = await collect_leaf_ids(api, classroom_id)
+    logger.info("Total video count: %d", len(leaf_ids))
 
     tasks: list[asyncio.Task] = []
 
@@ -85,6 +86,42 @@ async def main():
     logger.info("All tasks completed.")
 
     await api.close()
+
+
+async def collect_leaf_ids(api: YuketangAPI, classroom_id: int) -> list[int]:
+    classroom = await api.get_classroom(classroom_id)
+    logger.info(
+        "Classroom: course_name=%s, name=%s, teacher_name=%s",
+        classroom["course_name"],
+        classroom["name"],
+        classroom["teacher_name"],
+    )
+
+    chapter_data = await api.get_course_chapter(
+        classroom_id, sign=classroom["course_sign"], uv_id=classroom["uv_id"]
+    )
+
+    leaf_ids: list[int] = []
+
+    for chapter in chapter_data["course_chapter"]:
+        logger.info("Chapter: %d %s", chapter["id"], chapter["name"])
+
+        for item in chapter["section_leaf_list"]:
+            if "leaf_list" in item:
+                logger.info("  Section: %d %s", item["id"], item["name"])
+
+                for leaf in item["leaf_list"]:
+                    logger.info("    Leaf: %d %s type=%d", leaf["id"], leaf["name"], leaf["leaf_type"])
+
+                    if leaf["leaf_type"] == 0:
+                        leaf_ids.append(leaf["id"])
+
+            else:
+                logger.info("  Leaf: %d %s type=%d", item["id"], item["name"], item["leaf_type"])
+                if item["leaf_type"] == 0:
+                    leaf_ids.append(item["id"])
+
+    return leaf_ids
 
 
 async def send_heartbeats(

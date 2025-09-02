@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import json
 import random
 import string
@@ -26,6 +27,87 @@ class YuketangAPI:
 
     async def close(self):
         await self.session.close()
+
+    async def get_classroom(self, classroom_id: int, role: int = 5) -> dict:
+        params = {
+            "role": role
+        }
+        url = f"https://pro.yuketang.cn/v2/api/web/classrooms/{classroom_id}?{urlencode(params)}"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "classroom-id": str(classroom_id),
+        }
+
+        async with self.session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+        if data.get("errcode") != 0:
+            raise APIError(data.get("errmsg", "Unknown error"))
+
+        return data["data"]
+
+    async def get_course_chapter(self, classroom_id: int, sign: str, uv_id: int, term: str = "latest") -> dict:
+        params = {
+            "cid": classroom_id,
+            "sign": sign,
+            "term": term,
+            "uv_id": uv_id,
+            "classroom_id": classroom_id,
+        }
+        url = f"https://pro.yuketang.cn/mooc-api/v1/lms/learn/course/chapter?{urlencode(params)}"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "classroom-id": str(classroom_id),
+        }
+
+        async with self.session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+        if not data.get("success"):
+            raise APIError(data.get("msg", "Unknown error"))
+
+        return data["data"]
+
+    async def get_classroom_activities(
+        self, classroom_id: int, page: int = 0, offset: int = 20, sort: int = -1
+    ) -> list[dict]:
+        params = {
+            "actype": -1,
+            "page": page,
+            "offset": offset,
+            "sort": sort,
+        }
+        url = f"https://pro.yuketang.cn/v2/api/web/logs/learn/{classroom_id}?{urlencode(params)}"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "classroom-id": str(classroom_id),
+        }
+
+        async with self.session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+        if data.get("errcode") != 0:
+            raise APIError(data.get("errmsg", "Unknown error"))
+
+        return data["data"]["activities"]
+
+    async def get_classroom_activities_all(
+        self, classroom_id: int, offset: int = 20, sort: int = -1
+    ) -> list[dict]:
+        results: list[dict] = []
+
+        for page in itertools.count():
+            activities = await self.get_classroom_activities(
+                classroom_id, page=page, offset=offset, sort=sort
+            )
+            if not activities:
+                break
+            results.extend(activities)
+
+        return results
 
     async def get_leaf_info(self, classroom_id: int, leaf_id: int) -> dict:
         url = f"https://pro.yuketang.cn/mooc-api/v1/lms/learn/leaf_info/{classroom_id}/{leaf_id}/"
