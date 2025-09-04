@@ -9,6 +9,7 @@ from urllib.parse import unquote
 from tqdm import tqdm
 
 from yuketang_video.api import Heartbeat, YuketangAPI, get_video_duration
+from yuketang_video.util import wrap_with_async_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,7 @@ async def main():
 
     max_concurrent_tasks = config.get("max_concurrent_tasks", 8)
     semaphore = asyncio.Semaphore(max_concurrent_tasks)
-
-    async def sem_task(*args, **kwargs):
-        async with semaphore:
-            await send_heartbeats(*args, **kwargs)
+    wrapped_send_heartbeats = wrap_with_async_ctx(semaphore, send_heartbeats)
 
     tasks: list[asyncio.Task] = []
 
@@ -91,7 +89,7 @@ async def main():
 
         tasks.append(
             asyncio.create_task(
-                sem_task(
+                wrapped_send_heartbeats(
                     api, leaf_info, media_url, last_point, duration, position=len(tasks)
                 )
             )
