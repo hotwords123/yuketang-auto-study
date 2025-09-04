@@ -171,22 +171,36 @@ async def send_heartbeats(
             progress = batch[-1]["cp"]
 
             await asyncio.sleep(max(0, timestamp - time.time()))
-            await api.send_video_heartbeat(leaf_info["classroom_id"], list(batch))
 
-            watch_progress = await api.get_video_watch_progress(
-                user_id=leaf_info["user_id"],
-                course_id=leaf_info["course_id"],
-                classroom_id=leaf_info["classroom_id"],
-                video_id=leaf_info["id"],
-            )
+            while True:
+                try:
+                    await api.send_video_heartbeat(
+                        leaf_info["classroom_id"], list(batch)
+                    )
+                    break
+                except Exception as e:
+                    logger.error("Error sending video heartbeat: %s", e)
+                    await asyncio.sleep(1)
+                    continue
 
             pbar.update(progress - pbar.n)
-            pbar.set_postfix(
-                {
-                    "watch_length": watch_progress.get("watch_length", 0),
-                    "rate": watch_progress.get("rate", 0),
-                }
-            )
+
+            try:
+                watch_progress = await api.get_video_watch_progress(
+                    user_id=leaf_info["user_id"],
+                    course_id=leaf_info["course_id"],
+                    classroom_id=leaf_info["classroom_id"],
+                    video_id=leaf_info["id"],
+                )
+
+                pbar.set_postfix(
+                    {
+                        "watch_length": watch_progress.get("watch_length", 0),
+                        "rate": watch_progress.get("rate", 0),
+                    }
+                )
+            except Exception as e:
+                logger.error("Error fetching watch progress: %s", e)
 
     logger.info(
         "Finished sending heartbeats for %d %s", leaf_info["id"], leaf_info["name"]
