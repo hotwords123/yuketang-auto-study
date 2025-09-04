@@ -50,6 +50,13 @@ async def main():
     leaf_ids = await collect_leaf_ids(api, classroom_id)
     logger.info("Total video count: %d", len(leaf_ids))
 
+    max_concurrent_tasks = config.get("max_concurrent_tasks", 8)
+    semaphore = asyncio.Semaphore(max_concurrent_tasks)
+
+    async def sem_task(*args, **kwargs):
+        async with semaphore:
+            await send_heartbeats(*args, **kwargs)
+
     tasks: list[asyncio.Task] = []
 
     for leaf_id in leaf_ids:
@@ -84,7 +91,7 @@ async def main():
 
         tasks.append(
             asyncio.create_task(
-                send_heartbeats(
+                sem_task(
                     api, leaf_info, media_url, last_point, duration, position=len(tasks)
                 )
             )
