@@ -150,7 +150,7 @@ class YuketangAPI:
         if data.get("code") != 0:
             raise APIError(data.get("msg", "Unknown error"))
 
-        return data["data"].get(str(video_id))
+        return data["data"].get(str(video_id), {})
 
     async def send_video_heartbeat(self, classroom_id: int, data: list[dict]) -> None:
         url = "https://pro.yuketang.cn/video-log/heartbeat/"
