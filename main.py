@@ -178,8 +178,8 @@ async def send_heartbeats(
             pbar.update(progress - pbar.n)
             pbar.set_postfix(
                 {
-                    "watch_length": watch_progress["watch_length"],
-                    "rate": watch_progress["rate"],
+                    "watch_length": watch_progress.get("watch_length", 0),
+                    "rate": watch_progress.get("rate", 0),
                 }
             )
 
