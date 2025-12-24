@@ -65,10 +65,17 @@ async def main():
             classroom_id=classroom_id,
             video_id=leaf_id,
         )
-        playurl = await api.get_video_playurl(
-            classroom_id, leaf_info["content_info"]["media"]["ccid"]
-        )
-        media_url = next(iter(playurl["sources"].values()))[0]
+
+        media_data = leaf_info["content_info"]["media"]
+        if "playurl" in media_data:
+            media_url = media_data["playurl"]
+        elif "ccid" in media_data:
+            ccid = media_data["ccid"]
+            playurl = await api.get_video_playurl(classroom_id, ccid)
+            media_url = next(iter(playurl["sources"].values()))[0]
+        else:
+            logger.warning("No media URL found for %d %s", leaf_id, leaf_info["name"])
+            continue
 
         logger.info("%d %s %s", leaf_id, leaf_info["name"], media_url)
 
@@ -82,7 +89,9 @@ async def main():
 
         else:
             last_point = 0
-            duration = await get_video_duration(media_url)
+            duration = leaf_info["content_info"]["media"]["duration"]
+            if duration == 0:
+                duration = await get_video_duration(media_url)
             logger.info("Duration: %d", duration)
 
         logger.info("Last point: %d", last_point)

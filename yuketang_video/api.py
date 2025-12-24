@@ -29,9 +29,7 @@ class YuketangAPI:
         await self.session.close()
 
     async def get_classroom(self, classroom_id: int, role: int = 5) -> dict:
-        params = {
-            "role": role
-        }
+        params = {"role": role}
         url = f"https://pro.yuketang.cn/v2/api/web/classrooms/{classroom_id}?{urlencode(params)}"
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -47,7 +45,9 @@ class YuketangAPI:
 
         return data["data"]
 
-    async def get_course_chapter(self, classroom_id: int, sign: str, uv_id: int, term: str = "latest") -> dict:
+    async def get_course_chapter(
+        self, classroom_id: int, sign: str, uv_id: int, term: str = "latest"
+    ) -> dict:
         params = {
             "cid": classroom_id,
             "sign": sign,
@@ -206,7 +206,7 @@ class Heartbeat:
         self.classroom_id = int(leaf_info["classroom_id"])
         self.video_id = int(leaf_info["id"])
         self.sku_id = int(leaf_info["sku_id"])
-        self.ccid = leaf_info["content_info"]["media"]["ccid"]
+        self.ccid = leaf_info["content_info"]["media"].get("ccid", "")
         if duration is not None:
             self.duration = duration
         else:
