@@ -48,8 +48,9 @@ async def main():
             api.session.headers[header] = cookie_dict[cookie_name]
 
     classroom_id = config["classroom_id"]
-    leaf_ids = await collect_leaf_ids(api, classroom_id)
-    logger.info("Total video count: %d", len(leaf_ids))
+    leaves = await collect_leaves(api, classroom_id)
+    video_leaves = [leaf for leaf in leaves if leaf["leaf_type"] == 0]
+    logger.info("Total video count: %d", len(video_leaves))
 
     max_concurrent_tasks = config.get("max_concurrent_tasks", 8)
     semaphore = asyncio.Semaphore(max_concurrent_tasks)
@@ -57,7 +58,8 @@ async def main():
 
     tasks: list[asyncio.Task] = []
 
-    for leaf_id in leaf_ids:
+    for leaf in video_leaves:
+        leaf_id = leaf["id"]
         leaf_info = await api.get_leaf_info(classroom_id, leaf_id)
         watch_progress = await api.get_video_watch_progress(
             user_id=leaf_info["user_id"],
@@ -111,7 +113,7 @@ async def main():
     await api.close()
 
 
-async def collect_leaf_ids(api: YuketangAPI, classroom_id: int) -> list[int]:
+async def collect_leaves(api: YuketangAPI, classroom_id: int) -> list[dict]:
     classroom = await api.get_classroom(classroom_id)
     logger.info(
         "Classroom: course_name=%s, name=%s, teacher_name=%s",
@@ -124,7 +126,7 @@ async def collect_leaf_ids(api: YuketangAPI, classroom_id: int) -> list[int]:
         classroom_id, sign=classroom["course_sign"], uv_id=classroom["uv_id"]
     )
 
-    leaf_ids: list[int] = []
+    leaves: list[dict] = []
 
     for chapter in chapter_data["course_chapter"]:
         logger.info("Chapter: %d %s", chapter["id"], chapter["name"])
@@ -140,18 +142,15 @@ async def collect_leaf_ids(api: YuketangAPI, classroom_id: int) -> list[int]:
                         leaf["name"],
                         leaf["leaf_type"],
                     )
-
-                    if leaf["leaf_type"] == 0:
-                        leaf_ids.append(leaf["id"])
+                    leaves.append(leaf)
 
             else:
                 logger.info(
                     "  Leaf: %d %s type=%d", item["id"], item["name"], item["leaf_type"]
                 )
-                if item["leaf_type"] == 0:
-                    leaf_ids.append(item["id"])
+                leaves.append(item)
 
-    return leaf_ids
+    return leaves
 
 
 async def send_heartbeats(
