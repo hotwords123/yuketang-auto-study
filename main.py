@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import json
 import logging
+import random
 import time
 from typing import Optional
 from urllib.parse import unquote
@@ -14,7 +15,7 @@ from yuketang_video.util import wrap_with_async_ctx
 logger = logging.getLogger(__name__)
 
 
-async def main():
+async def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
@@ -47,13 +48,29 @@ async def main():
         if cookie_name in cookie_dict:
             api.session.headers[header] = cookie_dict[cookie_name]
 
+    try:
+        user_info = await api.get_user_info()
+        user_id = user_info["user_id"]
+        logger.info("User ID: %d, Nickname: %s", user_id, user_info["nickname"])
+
+        max_concurrent_tasks = config.get("max_concurrent_tasks", 8)
+        semaphore = asyncio.Semaphore(max_concurrent_tasks)
+
+        await slide_main(config, api, user_id, semaphore)
+        await video_main(config, api, semaphore)
+
+    finally:
+        await api.close()
+
+
+async def video_main(
+    config: dict, api: YuketangAPI, semaphore: asyncio.Semaphore
+) -> None:
     classroom_id = config["classroom_id"]
     leaves = await collect_leaves(api, classroom_id)
     video_leaves = [leaf for leaf in leaves if leaf["leaf_type"] == 0]
     logger.info("Total video count: %d", len(video_leaves))
 
-    max_concurrent_tasks = config.get("max_concurrent_tasks", 8)
-    semaphore = asyncio.Semaphore(max_concurrent_tasks)
     wrapped_send_heartbeats = wrap_with_async_ctx(semaphore, send_heartbeats)
 
     tasks: list[asyncio.Task] = []
@@ -108,9 +125,7 @@ async def main():
 
     await asyncio.gather(*tasks)
 
-    logger.info("All tasks completed.")
-
-    await api.close()
+    logger.info("Finished all video activities")
 
 
 async def collect_leaves(api: YuketangAPI, classroom_id: int) -> list[dict]:
@@ -212,6 +227,52 @@ async def send_heartbeats(
 
     logger.info(
         "Finished sending heartbeats for %d %s", leaf_info["id"], leaf_info["name"]
+    )
+
+
+async def slide_main(
+    config: dict, api: YuketangAPI, user_id: int, semaphore: asyncio.Semaphore
+) -> None:
+    classroom_id = config["classroom_id"]
+    activies = await api.get_classroom_activities_all(classroom_id)
+    slide_activities = [activity for activity in activies if activity["type"] == 2]
+    logger.info("Total slide count: %d", len(slide_activities))
+
+    wrapped_process_slide = wrap_with_async_ctx(semaphore, process_slide)
+
+    tasks: list[asyncio.Task] = []
+
+    for activity in slide_activities:
+        if activity["view"] and activity["view"]["done"] is True:
+            logger.info("Finished: %s", activity["title"])
+            continue
+
+        tasks.append(asyncio.create_task(wrapped_process_slide(api, user_id, activity)))
+
+    await asyncio.gather(*tasks)
+
+    logger.info("Finished all slide activities")
+
+
+async def process_slide(api: YuketangAPI, user_id: int, activity: dict) -> None:
+    courseware_id = int(activity["courseware_id"])
+    slide_count = activity["count"]
+
+    data = [random.randrange(20, 100) / 10 for _ in range(slide_count)]
+    await api.send_view_record(user_id, courseware_id, data)
+
+    await asyncio.sleep(5)
+
+    courseware_id = int(activity["courseware_id"])
+    view_depth = await api.get_view_depth(user_id, courseware_id)
+
+    logger.info(
+        "Slide %s - view depth: %d/%d, duration: %d, finished at: %s",
+        activity["title"],
+        view_depth["depth"],
+        slide_count,
+        view_depth["duration"],
+        view_depth["finish_time"],
     )
 
 

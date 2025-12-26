@@ -4,6 +4,7 @@ import json
 import random
 import string
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Optional
 from urllib.parse import urlencode, urlparse
 
@@ -25,8 +26,23 @@ class YuketangAPI:
             }
         )
 
-    async def close(self):
+    async def close(self) -> None:
         await self.session.close()
+
+    async def get_user_info(self) -> dict:
+        url = "https://pro.yuketang.cn/v/course_meta/user_info"
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+        }
+
+        async with self.session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+        if data.get("success") is not True:
+            raise APIError(data.get("msg", "Unknown error"))
+
+        return data["data"]["user_profile"]
 
     async def get_classroom(self, classroom_id: int, role: int = 5) -> dict:
         params = {"role": role}
@@ -186,6 +202,54 @@ class YuketangAPI:
 
         return data["data"]["playurl"]
 
+    async def get_view_depth(self, classroom_id: int, cards_id: int) -> dict:
+        url = "https://pro.yuketang.cn/v2/api/web/cards/view_depth"
+        params = {"classroom_id": classroom_id, "cards_id": cards_id}
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "classroom-id": str(classroom_id),
+        }
+
+        async with self.session.get(url, headers=headers, params=params) as response:
+            response.raise_for_status()
+            data = await response.json()
+
+        if data.get("errcode") != 0:
+            raise APIError(data.get("errmsg", "Unknown error"))
+
+        return data["data"]
+
+    async def send_view_record(
+        self,
+        user_id: int,
+        cards_id: int,
+        data: list[float],
+        start_time: float | None = None,
+        platform: str = "web",
+    ) -> None:
+        if start_time is None:
+            start_time = int(datetime.now().timestamp() - sum(data))
+
+        url = "wss://pro.yuketang.cn/ws/"
+        async with self.session.ws_connect(url) as ws:
+            await receive_ws_message(ws, "authorize")
+
+            payload = {
+                "op": "view_record",
+                "cardsID": cards_id,
+                "start_time": start_time,
+                "data": data,
+                "user_id": user_id,
+                "platform": platform,
+                "type": "cache",
+            }
+            print(payload)
+            await ws.send_json(payload)
+
+            resp = await receive_ws_message(ws, "view_record")
+            if resp.get("errno") != 0:
+                raise APIError(resp.get("errmsg", "Unknown error"))
+
 
 class Heartbeat:
     def __init__(
@@ -287,3 +351,17 @@ async def get_video_duration(url: str) -> float:
 
     info = json.loads(stdout.decode())
     return float(info["format"]["duration"])
+
+
+async def receive_ws_message(ws: aiohttp.ClientWebSocketResponse, op: str) -> dict:
+    async for msg in ws:
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            resp = json.loads(msg.data)
+            if resp.get("op") == op:
+                return resp
+        elif msg.type == aiohttp.WSMsgType.ERROR:
+            raise APIError("WebSocket error")
+        elif msg.type == aiohttp.WSMsgType.CLOSED:
+            raise APIError("WebSocket closed unexpectedly")
+
+    raise APIError("WebSocket message not received")
